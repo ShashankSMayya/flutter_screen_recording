@@ -1,125 +1,122 @@
-library flutter_screen_recording_web;
-
 import 'dart:async';
-import 'dart:html';
-import 'dart:js';
-
-import 'interop/get_display_media.dart';
-
-import 'package:flutter_screen_recording_platform_interface/flutter_screen_recording_platform_interface.dart';
-import 'package:flutter_web_plugins/flutter_web_plugins.dart';
+import 'package:universal_html/html.dart' as html;
+import 'package:universal_html/js.dart' as js;
+import 'package:flutter_test_recording/flutter_screen_recording_platform_interface.dart';
+import 'get_display_media.dart';
 
 class WebFlutterScreenRecording extends FlutterScreenRecordingPlatform {
-  MediaStream? stream;
+  html.MediaStream? stream;
   String? name;
-  MediaRecorder? mediaRecorder;
-  Blob? recordedChunks;
+  html.MediaRecorder? mediaRecorder;
+  html.Blob? recordedChunks;
   String? mimeType;
+  bool isAutoSaveFile = true;
 
-  static registerWith(Registrar registrar) {
-    FlutterScreenRecordingPlatform.instance = WebFlutterScreenRecording();
+  @override
+  Future<bool> startRecordScreen(String name, {bool isAutoSaveFile = true, Function()? onStopSharing}) async {
+    return _record(name, true, false, isAutoSaveFile: isAutoSaveFile, onStopSharing: onStopSharing);
   }
 
   @override
-  Future<bool> startRecordScreen(
-    String name, {
-    String notificationTitle = "",
-    String notificationMessage = "",
-  }) async {
-    return _record(name, true, false);
+  Future<bool> startRecordScreenAndAudio(String name, {bool isAutoSaveFile = true, Function()? onStopSharing}) async {
+    return _record(name, true, true, isAutoSaveFile: isAutoSaveFile, onStopSharing: onStopSharing);
   }
 
-  @override
-  Future<bool> startRecordScreenAndAudio(
-    String name, {
-    String notificationTitle = "",
-    String notificationMessage = "",
-  }) async {
-    return _record(name, true, true);
-  }
-
-  Future<bool> _record(String name, bool recordVideo, bool recordAudio) async {
+  Future<bool> _record(String name, bool recordVideo, bool recordAudio, {required bool isAutoSaveFile, Function()? onStopSharing}) async {
     try {
-      var audioStream;
+      this.isAutoSaveFile = isAutoSaveFile;
+      html.MediaStream? audioStream;
 
       if (recordAudio) {
-        audioStream = await navigator.getUserMedia({"audio": true});
+        audioStream = await Navigator.getUserMedia({"audio": true});
       }
-      stream = await navigator.getDisplayMedia({"audio": recordAudio, "video": recordVideo});
+      stream = await Navigator.getDisplayMedia({"audio": recordAudio, "video": recordVideo});
       this.name = name;
       if (recordAudio) {
-        stream!.addTrack(audioStream.getAudioTracks()[0]);
+        stream!.addTrack(audioStream!.getAudioTracks()[0]);
       }
 
-      if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+      if (html.MediaRecorder.isTypeSupported('video/mp4;codecs=h264')) {
+        print('video/mp4;codecs=h264');
+        mimeType = 'video/mp4;codecs=h264';
+      } else if (html.MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
         print('video/webm;codecs=vp9');
         mimeType = 'video/webm;codecs=vp9,opus';
-      } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8.0')) {
+      } else if (html.MediaRecorder.isTypeSupported('video/webm;codecs=vp8.0')) {
         print('video/webm;codecs=vp8.0');
         mimeType = 'video/webm;codecs=vp8.0,opus';
-      } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) {
+      } else if (html.MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) {
         print('video/webm;codecs=vp8');
         mimeType = 'video/webm;codecs=vp8,opus';
-      } else if (MediaRecorder.isTypeSupported('video/mp4;codecs=h265')) {
+      } else if (html.MediaRecorder.isTypeSupported('video/mp4;codecs=h265')) {
         mimeType = 'video/mp4;codecs=h265,opus';
         print("video/mp4;codecs=h265");
-      } else if (MediaRecorder.isTypeSupported('video/mp4;codecs=h264')) {
+      } else if (html.MediaRecorder.isTypeSupported('video/mp4;codecs=h264')) {
         print("video/mp4;codecs=h264");
         mimeType = 'video/mp4;codecs=h264,opus';
-      } else if (MediaRecorder.isTypeSupported('video/webm;codecs=h265')) {
+      } else if (html.MediaRecorder.isTypeSupported('video/webm;codecs=h265')) {
         print("video/webm;codecs=h265");
         mimeType = 'video/webm;codecs=h265,opus';
-      } else if (MediaRecorder.isTypeSupported('video/webm;codecs=h264')) {
+      } else if (html.MediaRecorder.isTypeSupported('video/webm;codecs=h264')) {
         print("video/webm;codecs=h264");
         mimeType = 'video/webm;codecs=h264,opus';
       } else {
         mimeType = 'video/webm';
       }
 
-      this.mediaRecorder = new MediaRecorder(stream!, {'mimeType': mimeType});
+      mediaRecorder = html.MediaRecorder(stream!, {'mimeType': mimeType});
 
-      this.mediaRecorder!.addEventListener('dataavailable', (Event event) {
+      mediaRecorder!.addEventListener('dataavailable', (html.Event event) {
         print("datavailable ${event.runtimeType}");
-        recordedChunks = JsObject.fromBrowserObject(event)['data'];
-        this.mimeType = mimeType;
+        recordedChunks = js.JsObject.fromBrowserObject(event)['data'];
+        mimeType = mimeType;
         print("blob size: ${recordedChunks?.size ?? 'empty'}");
       });
 
-      this.stream!.getVideoTracks()[0].addEventListener('ended', (Event event)  {
-         //If user stop sharing screen, stop record
-         stopRecordScreen;
+      stream!.getVideoTracks()[0].addEventListener('ended', (html.Event event) {
+        //If user stop sharing screen, stop record
+        stopRecordScreen.then((value) => onStopSharing?.call());
       });
 
-      this.mediaRecorder!.start();
+      mediaRecorder!.start();
 
       return true;
     } on Error catch (e) {
-      print("--->" + e.toString());
+      print("--->$e");
       return false;
     }
   }
 
   @override
   Future<String> get stopRecordScreen {
-    final c = new Completer<String>();
-    this.mediaRecorder!.addEventListener("stop", (event) {
-
+    final c = Completer<String>();
+    mediaRecorder!.addEventListener("stop", (event) async {
       mediaRecorder = null;
-      this.stream!.getTracks().forEach((element) => element.stop());
-      this.stream = null;
-      final a = document.createElement("a") as AnchorElement;
-      final url = Url.createObjectUrl(
-          new Blob(List<dynamic>.from([recordedChunks]), mimeType));
-      document.body!.append(a);
-      a.style.display = "none";
-      a.href = url;
-      a.download = this.name;
-      a.click();
-      Url.revokeObjectUrl(url);
-
-      c.complete(this.name);
+      stream!.getTracks().forEach((element) => element.stop());
+      stream = null;
+      if (isAutoSaveFile) {
+        final a = html.document.createElement("a") as html.AnchorElement;
+        final url = html.Url.createObjectUrl(blobFile);
+        html.document.body!.append(a);
+        a.style.display = "none";
+        a.href = url;
+        a.download = name;
+        a.click();
+        html.Url.revokeObjectUrl(url);
+        c.complete(name);
+      } else {
+        c.complete('');
+      }
     });
     mediaRecorder!.stop();
     return c.future;
+  }
+
+  html.Blob? get blobFile {
+    try {
+      return html.Blob(List<dynamic>.from([recordedChunks]), mimeType);
+    } catch (_) {
+      return null;
+    }
   }
 }
